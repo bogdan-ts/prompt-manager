@@ -19,11 +19,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    command: |
-      sh -c "
-        npx prisma generate &&
-        node server.js
-      "
+    command: node server.js
 
 variables:
   - name: "DATABASE_URL"
