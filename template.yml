@@ -18,6 +18,12 @@ services:
       timeout: 5s
       retries: 5
     command: node server.js
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prompt.rule=Host(`demo-dblab.tsechoev.dev`)"
+      - "traefik.http.routers.prompt.entrypoints=websecure"
+      - "traefik.http.routers.prompt.tls.certresolver=letsencrypt"
+      - "traefik.http.services.prompt.loadbalancer.server.port=3000"
 
 variables:
   - name: "DATABASE_URL"
