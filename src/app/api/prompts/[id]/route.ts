@@ -8,10 +8,10 @@ const prisma = new PrismaClient();
 // GET /api/prompts/[id] - get single prompt
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = (await getServerSession(authOptions)) as any;
 
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -20,7 +20,7 @@ export async function GET(
       );
     }
 
-    const sessionUser = session.user as any;
+    const sessionUser = session.user;
     const user = await prisma.user.findUnique({
       where: { email: sessionUser.email },
     });
@@ -29,7 +29,7 @@ export async function GET(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const prompt = await prisma.prompt.findFirst({
       where: {
         id,
@@ -54,10 +54,10 @@ export async function GET(
 // PUT /api/prompts/[id] - update prompt
 export async function PUT(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = (await getServerSession(authOptions)) as any;
 
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -66,7 +66,7 @@ export async function PUT(
       );
     }
 
-    const sessionUser = session.user as any;
+    const sessionUser = session.user;
     const user = await prisma.user.findUnique({
       where: { email: sessionUser.email },
     });
@@ -75,7 +75,7 @@ export async function PUT(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
     const body = await request.json();
     const { title, content, description, tags, category } = body;
 
@@ -115,10 +115,10 @@ export async function PUT(
 // DELETE /api/prompts/[id] - delete prompt
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = (await getServerSession(authOptions)) as any;
 
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -127,7 +127,7 @@ export async function DELETE(
       );
     }
 
-    const sessionUser = session.user as any;
+    const sessionUser = session.user;
     const user = await prisma.user.findUnique({
       where: { email: sessionUser.email },
     });
@@ -136,7 +136,7 @@ export async function DELETE(
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
 
-    const { id } = params;
+    const { id } = await params;
 
     // Check if prompt belongs to user before deleting
     const existingPrompt = await prisma.prompt.findFirst({

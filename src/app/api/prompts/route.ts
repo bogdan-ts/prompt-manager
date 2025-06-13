@@ -8,7 +8,7 @@ const prisma = new PrismaClient();
 // GET /api/prompts - get user's prompts
 export async function GET() {
   try {
-    const session = await getServerSession(authOptions);
+    const session = (await getServerSession(authOptions)) as any;
 
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -17,7 +17,7 @@ export async function GET() {
       );
     }
 
-    const sessionUser = session.user as any;
+    const sessionUser = session.user;
 
     // First, find or create user
     const user = await prisma.user.upsert({
@@ -55,7 +55,7 @@ export async function GET() {
 // POST /api/prompts - create new prompt
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
+    const session = (await getServerSession(authOptions)) as any;
 
     if (!session?.user?.email) {
       return NextResponse.json(
@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sessionUser = session.user as any;
+    const sessionUser = session.user;
 
     // Find or create user
     const user = await prisma.user.upsert({
