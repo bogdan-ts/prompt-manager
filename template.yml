@@ -12,8 +12,6 @@ services:
       - DATABASE_URL={{DATABASE_URL}}
       - NEXTAUTH_URL=https://{{RANDOM_SUBDOMAIN}}.{{DOMAIN}}
       - NEXTAUTH_SECRET={{RANDOM_SECRET}}
-    ports:
-      - "3000:3000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
       interval: 10s
