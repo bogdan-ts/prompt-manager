@@ -1,0 +1,41 @@
+name: "Prompt Manager"
+description: "AI Prompt Management Application with Next.js and external PostgreSQL (via DBLab)"
+logo: "https://nextjs.org/static/favicon/favicon-32x32.png"
+
+services:
+  - name: "app"
+    build:
+      context: "."
+      dockerfile: "Dockerfile"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL={{DATABASE_URL}}
+      - NEXTAUTH_URL=https://{{RANDOM_SUBDOMAIN}}.{{DOMAIN}}
+      - NEXTAUTH_SECRET={{RANDOM_SECRET}}
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: |
+      sh -c "
+        npx prisma generate &&
+        node server.js
+      "
+
+variables:
+  - name: "DATABASE_URL"
+    description: "Database URL (provided by DBLab CI integration)"
+    required: true
+
+  - name: "NEXTAUTH_SECRET"
+    description: "Secret key for NextAuth.js authentication"
+    defaultValue: "{{RANDOM_SECRET}}"
+    required: true
+
+  - name: "NEXTAUTH_URL"
+    description: "Base URL for NextAuth.js callbacks"
+    defaultValue: "https://{{RANDOM_SUBDOMAIN}}.{{DOMAIN}}"
+    required: true

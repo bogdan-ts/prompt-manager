@@ -14,11 +14,16 @@ A modern React application for managing AI prompts with PostgreSQL database, bui
 
 ## Prerequisites
 
-Before running this application, make sure you have:
+### Local Development
 
 - Node.js 18+ installed
 - PostgreSQL database running
 - npm or yarn package manager
+
+### Docker Deployment
+
+- Docker and Docker Compose installed
+- Or Dokploy for cloud deployment
 
 ## Setup
 
@@ -60,6 +65,8 @@ Before running this application, make sure you have:
 
 ## Running the Application
 
+### Local Development
+
 1. **Start the development server**
 
    ```bash
@@ -69,6 +76,36 @@ Before running this application, make sure you have:
 2. **Open your browser**
 
    Navigate to [http://localhost:3000](http://localhost:3000)
+
+### Docker Deployment
+
+#### Quick Start with Docker Compose
+
+```bash
+# Run the deployment script
+./scripts/deploy.sh
+```
+
+Or manually:
+
+```bash
+# Build and start all services
+docker-compose up --build -d
+
+# View logs
+docker-compose logs -f
+
+# Stop services
+docker-compose down
+```
+
+#### Dokploy Deployment
+
+1. **Upload template**: Import `template.yml` in Dokploy
+2. **Configure variables**: Set environment variables
+3. **Deploy**: Click deploy and wait for completion
+
+For detailed deployment instructions, see [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## Database Schema
 
