@@ -1,4 +1,4 @@
-# Prompt Manager
+# Prompt Manager!
 
 A modern React application for managing AI prompts with PostgreSQL database, built with Next.js, TypeScript, and Tailwind CSS.
 
