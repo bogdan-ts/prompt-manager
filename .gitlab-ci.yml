@@ -1,6 +1,5 @@
 stages:
   - preview
-  - production
 
 deploy_preview:
   stage: preview
@@ -9,74 +8,112 @@ deploy_preview:
   image: alpine:latest
   script:
     - apk add --no-cache jq curl
+
     - echo "🪄 Creating DBLab branch for MR $CI_MERGE_REQUEST_IID"
     - BRANCH_NAME="pr-${CI_MERGE_REQUEST_IID}"
     - CLONE_ID="pr_${CI_MERGE_REQUEST_IID}_clone"
+
+    # Create DBLab branch
     - |
-      curl -X POST "$DBLAB_API/branch" \
+      curl -s -X POST "$DBLAB_API/branch" \
         -H "Verification-Token: $DBLAB_TOKEN" \
         -H "Content-Type: application/json" \
         -d "{\"branchName\": \"$BRANCH_NAME\", \"baseBranch\": \"main\"}"
 
-    - echo "📦 Creating clone for $BRANCH_NAME"
-
+    # Create DBLab clone
     - |
-      curl -X POST "$DBLAB_API/clone" \
+      curl -s -X POST "$DBLAB_API/clone" \
         -H "Verification-Token: $DBLAB_TOKEN" \
         -H "Content-Type: application/json" \
         -d "{
-          \"id\": \"${BRANCH_NAME}_clone\",
-          \"branch\": \"${BRANCH_NAME}\",
-          \"db\": {
-            \"username\": \"${DBLAB_DB_USERNAME}\",
-            \"password\": \"${DBLAB_DB_PASSWORD}\"
-          }
-        }"
+              \"id\": \"$CLONE_ID\",
+              \"branch\": \"$BRANCH_NAME\",
+              \"db\": {
+                \"username\": \"$DBLAB_DB_USERNAME\",
+                \"password\": \"$DBLAB_DB_PASSWORD\"
+              }
+            }"
 
-    - echo "⏳ Waiting for clone $CLONE_ID to be ready"
+    # Wait for readiness
     - |
-      for i in {1..30}; do
+      for i in $(seq 1 30); do
         STATUS=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.status.code')
         echo "[$i] Status: $STATUS"
-        if [ "$STATUS" == "OK" ]; then break; fi
+        if [ "$STATUS" = "OK" ]; then break; fi
         sleep 5
       done
 
-    - echo "🔐 Fetching connection string"
+    # Manually build DATABASE_URL
     - |
-      DB_URL=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.connection_string')
+      DB_INFO=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID")
+      DB_PORT=$(echo "$DB_INFO" | jq -r '.db.port')
+      DB_HOST="$DBLAB_HOST"
+      DB_USER="$DBLAB_DB_USERNAME"
+      DB_PASS="$DBLAB_DB_PASSWORD"
+      DB_NAME="$DBLAB_DB_NAME"
+      DB_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
       echo "DB_URL=$DB_URL"
 
-    - echo "🚀 Triggering Dokploy deployment"
+    # Set NEXTAUTH_URL
+    - NEXTAUTH_URL="https://${CI_MERGE_REQUEST_IID}.demo-dblab.tsechoev.dev"
+    - echo "NEXTAUTH_URL=$NEXTAUTH_URL"
+
+    # Update envs in Coolify (bulk)
     - |
-      curl -s -X POST "$DOKPLOY_API" \
-        -H "Verification-Token: $DOKPLOY_TOKEN" \
+      curl -s -X PATCH "${COOLIFY_URL}/api/v1/applications/${COOLIFY_APP_UUID}/envs/bulk" \
+        -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{
-              "project": "prompt-manager-preview",
-              "ref": "'"$CI_COMMIT_REF_NAME"'",
-              "environment": "preview",
-              "variables": {
-                "DATABASE_URL": "'"$DB_URL"'"
-              }
+              "data": [
+                {
+                  "key": "DATABASE_URL",
+                  "value": "'"${DB_URL}"'",
+                  "is_preview": true,
+                  "is_build_time": true,
+                  "is_literal": true,
+                  "is_multiline": false,
+                  "is_shown_once": false
+                },
+                {
+                  "key": "NEXTAUTH_URL",
+                  "value": "'"${NEXTAUTH_URL}"'",
+                  "is_preview": true,
+                  "is_build_time": true,
+                  "is_literal": true,
+                  "is_multiline": false,
+                  "is_shown_once": false
+                }
+              ]
             }'
 
-deploy_prod:
-  stage: production
-  only:
-    - tags
-  image: curlimages/curl:latest
-  script:
-    - echo "🚀 Deploying production tag $CI_COMMIT_TAG"
+    # Trigger preview deployment
     - |
-      curl -s -X POST "$DOKPLOY_API" \
-        -H "Verification-Token: $DOKPLOY_TOKEN" \
+      curl -s -X POST "${COOLIFY_URL}/api/v1/deploy" \
+        -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{
-              "project": "prompt-manager",
-              "ref": "'"$CI_COMMIT_TAG"'",
-              "environment": "production",
-              "variables": {
-                "DATABASE_URL": "'"$PROD_DATABASE_URL"'"
-              }
+              "uuid": "'"${COOLIFY_APP_UUID}"'",
+              "pr": '"${CI_MERGE_REQUEST_IID}"',
+              "force": true
             }'
+
+cleanup_preview:
+  stage: preview
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "closed"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_STATE == "merged"'
+  image: alpine:latest
+  script:
+    - apk add --no-cache curl
+    - BRANCH_NAME="pr-${CI_MERGE_REQUEST_IID}"
+    - CLONE_ID="pr_${CI_MERGE_REQUEST_IID}_clone"
+
+    - |
+      echo "🧹 Removing DBLab clone: $CLONE_ID"
+      curl -s -X DELETE "$DBLAB_API/clone/$CLONE_ID" \
+        -H "Verification-Token: $DBLAB_TOKEN"
+
+    - |
+      echo "🪓 Deleting DBLab branch: $BRANCH_NAME"
+      curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
+        -H "Verification-Token: $DBLAB_TOKEN"
