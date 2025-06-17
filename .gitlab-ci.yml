@@ -44,7 +44,7 @@ deploy_preview:
 
     # Get DB URL
     - |
-      DB_URL=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.connection_string')
+      DB_URL=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.db.connStr')
       echo "DB_URL=$DB_URL"
 
     # Set NEXTAUTH_URL based on MR ID
@@ -81,5 +81,11 @@ deploy_preview:
 
     # Trigger deployment
     - |
-      curl -s -X POST "${COOLIFY_URL}/api/v1/deploy?pr=$CI_MERGE_REQUEST_IID&force=true" \
-        -H "Authorization: Bearer $COOLIFY_TOKEN"
+      curl -s -X POST "${COOLIFY_URL}/api/v1/deploy" \
+        -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "uuid": "'"$COOLIFY_APP_UUID"'",
+          "pr": '"$CI_MERGE_REQUEST_IID"',
+          "force": true
+        }'
