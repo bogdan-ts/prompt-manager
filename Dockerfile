@@ -23,12 +23,16 @@ WORKDIR /app
 # Add user
 RUN addgroup --system --gid 1001 nodejs && adduser --system --uid 1001 nextjs
 
-COPY --from=deps /app/node_modules ./node_modules
-
+# Only copy what's actually needed
 COPY --from=builder /app/public ./public
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/prisma ./prisma
+COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
+COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
+
+# Permissions
+RUN chown -R nextjs:nodejs /app
 
 USER nextjs
 
