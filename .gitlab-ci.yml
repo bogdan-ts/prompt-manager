@@ -8,6 +8,7 @@ deploy_preview:
   image: alpine:latest
   script:
     - apk add --no-cache jq curl
+
     - echo "🪄 Creating DBLab branch for MR $CI_MERGE_REQUEST_IID"
     - BRANCH_NAME="pr-${CI_MERGE_REQUEST_IID}"
     - CLONE_ID="pr_${CI_MERGE_REQUEST_IID}_clone"
@@ -25,13 +26,13 @@ deploy_preview:
         -H "Verification-Token: $DBLAB_TOKEN" \
         -H "Content-Type: application/json" \
         -d "{
-          \"id\": \"$CLONE_ID\",
-          \"branch\": \"$BRANCH_NAME\",
-          \"db\": {
-            \"username\": \"$DBLAB_DB_USERNAME\",
-            \"password\": \"$DBLAB_DB_PASSWORD\"
-          }
-        }"
+              \"id\": \"$CLONE_ID\",
+              \"branch\": \"$BRANCH_NAME\",
+              \"db\": {
+                \"username\": \"$DBLAB_DB_USERNAME\",
+                \"password\": \"$DBLAB_DB_PASSWORD\"
+              }
+            }"
 
     # Wait for readiness
     - |
@@ -42,50 +43,56 @@ deploy_preview:
         sleep 5
       done
 
-    # Get DB URL
+    # Manually build DATABASE_URL
     - |
-      DB_URL=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.db.connStr')
+      DB_INFO=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID")
+      DB_HOST=$(echo "$DB_INFO" | jq -r '.db.host')
+      DB_PORT=$(echo "$DB_INFO" | jq -r '.db.port')
+      DB_USER=$(echo "$DB_INFO" | jq -r '.db.username')
+      DB_NAME=$(echo "$DB_INFO" | jq -r '.db.dbname')
+      DB_PASS="$DBLAB_DB_PASSWORD"
+      DB_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
       echo "DB_URL=$DB_URL"
 
-    # Set NEXTAUTH_URL based on MR ID
+    # Set NEXTAUTH_URL
     - NEXTAUTH_URL="https://${CI_MERGE_REQUEST_IID}.demo-dblab.tsechoev.dev"
     - echo "NEXTAUTH_URL=$NEXTAUTH_URL"
 
-    # Update envs in Coolify
+    # Update envs in Coolify (bulk)
     - |
-      curl -s -X PATCH "${COOLIFY_URL}/api/v1/applications/$COOLIFY_APP_UUID/envs/bulk" \
-        -H "Authorization: Bearer $COOLIFY_TOKEN" \
+      curl -s -X PATCH "${COOLIFY_URL}/api/v1/applications/${COOLIFY_APP_UUID}/envs/bulk" \
+        -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{
-          "data": [
-            {
-              "key": "DATABASE_URL",
-              "value": "'"$DB_URL"'",
-              "is_preview": true,
-              "is_build_time": true,
-              "is_literal": true,
-              "is_multiline": false,
-              "is_shown_once": false
-            },
-            {
-              "key": "NEXTAUTH_URL",
-              "value": "'"$NEXTAUTH_URL"'",
-              "is_preview": true,
-              "is_build_time": true,
-              "is_literal": true,
-              "is_multiline": false,
-              "is_shown_once": false
-            }
-          ]
-        }'
+              "data": [
+                {
+                  "key": "DATABASE_URL",
+                  "value": "'"${DB_URL}"'",
+                  "is_preview": true,
+                  "is_build_time": true,
+                  "is_literal": true,
+                  "is_multiline": false,
+                  "is_shown_once": false
+                },
+                {
+                  "key": "NEXTAUTH_URL",
+                  "value": "'"${NEXTAUTH_URL}"'",
+                  "is_preview": true,
+                  "is_build_time": true,
+                  "is_literal": true,
+                  "is_multiline": false,
+                  "is_shown_once": false
+                }
+              ]
+            }'
 
-    # Trigger deployment
+    # Trigger preview deployment
     - |
       curl -s -X POST "${COOLIFY_URL}/api/v1/deploy" \
         -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
         -H "Content-Type: application/json" \
         -d '{
-          "uuid": "'"$COOLIFY_APP_UUID"'",
-          "pr": '"$CI_MERGE_REQUEST_IID"',
-          "force": true
-        }'
+              "uuid": "'"${COOLIFY_APP_UUID}"'",
+              "pr": '"${CI_MERGE_REQUEST_IID}"',
+              "force": true
+            }'
