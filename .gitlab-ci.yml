@@ -46,11 +46,11 @@ deploy_preview:
     # Manually build DATABASE_URL
     - |
       DB_INFO=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID")
-      DB_HOST=$(echo "$DB_INFO" | jq -r '.db.host')
       DB_PORT=$(echo "$DB_INFO" | jq -r '.db.port')
-      DB_USER=$(echo "$DB_INFO" | jq -r '.db.username')
-      DB_NAME=$(echo "$DB_INFO" | jq -r '.db.dbname')
+      DB_HOST="$DBLAB_HOST"
+      DB_USER="$DBLAB_DB_USERNAME"
       DB_PASS="$DBLAB_DB_PASSWORD"
+      DB_NAME="$DBLAB_DB_NAME"
       DB_URL="postgresql://${DB_USER}:${DB_PASS}@${DB_HOST}:${DB_PORT}/${DB_NAME}"
       echo "DB_URL=$DB_URL"
 
