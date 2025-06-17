@@ -109,7 +109,7 @@ cleanup_preview:
       echo "🧹 Looking for merged MR to cleanup..."
 
       # Extract MR number from commit message (format: "Merge branch 'feature' into 'main'")
-      MR_ID=$(echo "$CI_COMMIT_MESSAGE" | grep -oP "See merge request.*!(\d+)" | grep -oP "\d+" || echo "")
+      MR_ID=$(echo "$CI_COMMIT_MESSAGE" | sed -n 's/.*See merge request.*!\([0-9]\+\).*/\1/p' || echo "")
 
       # Fallback: get MR from GitLab API
       if [ -z "$MR_ID" ]; then
@@ -131,18 +131,28 @@ cleanup_preview:
       # Check if resources exist before attempting deletion
       CLONE_EXISTS=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.status.code // empty')
 
-      if [ "$CLONE_EXISTS" != "null" ] && [ -n "$CLONE_EXISTS" ]; then
+            if [ "$CLONE_EXISTS" != "null" ] && [ -n "$CLONE_EXISTS" ]; then
         echo "🗑️ Deleting DBLab clone: $CLONE_ID"
         curl -s -X DELETE "$DBLAB_API/clone/$CLONE_ID" \
           -H "Verification-Token: $DBLAB_TOKEN"
         echo "✅ Clone deleted"
+        
+        echo "⏱️ Waiting 10 seconds for clone cleanup to complete..."
+        sleep 10
       else
         echo "ℹ️ Clone $CLONE_ID not found or already deleted"
       fi
 
       echo "🗑️ Deleting DBLab branch: $BRANCH_NAME"
-      curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
-        -H "Verification-Token: $DBLAB_TOKEN"
-      echo "✅ Branch deletion attempted"
+      BRANCH_DELETE_RESPONSE=$(curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
+        -H "Verification-Token: $DBLAB_TOKEN")
+
+      if echo "$BRANCH_DELETE_RESPONSE" | grep -q "BAD_REQUEST"; then
+        echo "⚠️ Branch still has dependencies, retrying in 5 seconds..."
+        sleep 5
+        curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
+          -H "Verification-Token: $DBLAB_TOKEN"
+      fi
+      echo "✅ Branch deletion completed"
 
       echo "🎉 Cleanup completed for MR $MR_ID"
