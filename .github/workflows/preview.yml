@@ -1,0 +1,144 @@
+name: Preview Environment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  deploy_preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create DBLab Preview Environment
+        env:
+          DBLAB_API: ${{ secrets.DBLAB_API }}
+          DBLAB_TOKEN: ${{ secrets.DBLAB_TOKEN }}
+          DBLAB_HOST: ${{ secrets.DBLAB_HOST }}
+          DBLAB_DB_USERNAME: ${{ secrets.DBLAB_DB_USERNAME }}
+          DBLAB_DB_PASSWORD: ${{ secrets.DBLAB_DB_PASSWORD }}
+          DBLAB_DB_NAME: ${{ secrets.DBLAB_DB_NAME }}
+          COOLIFY_URL: ${{ secrets.COOLIFY_URL }}
+          COOLIFY_TOKEN: ${{ secrets.COOLIFY_TOKEN }}
+          COOLIFY_APP_UUID: ${{ secrets.COOLIFY_APP_UUID }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "🪄 Creating DBLab branch for PR $PR_NUMBER"
+          BRANCH_NAME="pr-${PR_NUMBER}"
+          CLONE_ID="pr_${PR_NUMBER}_clone"
+
+          # Create DBLab branch
+          curl -s -X POST "$DBLAB_API/branch" \
+            -H "Verification-Token: $DBLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"branchName\": \"$BRANCH_NAME\", \"baseBranch\": \"main\"}"
+
+          # Create DBLab clone
+          curl -s -X POST "$DBLAB_API/clone" \
+            -H "Verification-Token: $DBLAB_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{
+                  \"id\": \"$CLONE_ID\",
+                  \"branch\": \"$BRANCH_NAME\",
+                  \"db\": {
+                    \"username\": \"$DBLAB_DB_USERNAME\",
+                    \"password\": \"$DBLAB_DB_PASSWORD\"
+                  }
+                }"
+
+          # Wait for readiness
+          for i in $(seq 1 30); do
+            STATUS=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.status.code')
+            echo "[$i] Status: $STATUS"
+            if [ "$STATUS" = "OK" ]; then break; fi
+            sleep 5
+          done
+
+          # Build DATABASE_URL
+          DB_INFO=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID")
+          DB_PORT=$(echo "$DB_INFO" | jq -r '.db.port')
+          DB_URL="postgresql://${DBLAB_DB_USERNAME}:${DBLAB_DB_PASSWORD}@${DBLAB_HOST}:${DB_PORT}/${DBLAB_DB_NAME}"
+
+          # Set NEXTAUTH_URL
+          NEXTAUTH_URL="https://${PR_NUMBER}.demo-dblab.tsechoev.dev"
+
+          # Update envs in Coolify
+          curl -s -X PATCH "${COOLIFY_URL}/api/v1/applications/${COOLIFY_APP_UUID}/envs/bulk" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+                  "data": [
+                    {
+                      "key": "DATABASE_URL",
+                      "value": "'"${DB_URL}"'",
+                      "is_preview": true,
+                      "is_build_time": true,
+                      "is_literal": true,
+                      "is_multiline": false,
+                      "is_shown_once": false
+                    },
+                    {
+                      "key": "NEXTAUTH_URL",
+                      "value": "'"${NEXTAUTH_URL}"'",
+                      "is_preview": true,
+                      "is_build_time": true,
+                      "is_literal": true,
+                      "is_multiline": false,
+                      "is_shown_once": false
+                    }
+                  ]
+                }'
+
+          # Trigger preview deployment
+          curl -s -X POST "${COOLIFY_URL}/api/v1/deploy" \
+            -H "Authorization: Bearer ${COOLIFY_TOKEN}" \
+            -H "Content-Type: application/json" \
+            -d '{
+                  "uuid": "'"${COOLIFY_APP_UUID}"'",
+                  "pr": '$PR_NUMBER',
+                  "force": true
+                }'
+
+          echo "✅ Preview environment deployed at: $NEXTAUTH_URL"
+
+  cleanup_preview:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup Preview Environment
+        env:
+          DBLAB_API: ${{ secrets.DBLAB_API }}
+          DBLAB_TOKEN: ${{ secrets.DBLAB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          echo "🧹 Cleaning up preview environment for PR $PR_NUMBER"
+          BRANCH_NAME="pr-${PR_NUMBER}"
+          CLONE_ID="pr_${PR_NUMBER}_clone"
+
+          # Check if resources exist before attempting deletion
+          CLONE_EXISTS=$(curl -s -H "Verification-Token: $DBLAB_TOKEN" "$DBLAB_API/clone/$CLONE_ID" | jq -r '.status.code // empty')
+
+          if [ "$CLONE_EXISTS" != "null" ] && [ -n "$CLONE_EXISTS" ]; then
+            echo "🗑️ Deleting DBLab clone: $CLONE_ID"
+            curl -s -X DELETE "$DBLAB_API/clone/$CLONE_ID" \
+              -H "Verification-Token: $DBLAB_TOKEN"
+            echo "✅ Clone deleted"
+            
+            echo "⏱️ Waiting 10 seconds for clone cleanup to complete..."
+            sleep 10
+          else
+            echo "ℹ️ Clone $CLONE_ID not found or already deleted"
+          fi
+
+          echo "🗑️ Deleting DBLab branch: $BRANCH_NAME"
+          BRANCH_DELETE_RESPONSE=$(curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
+            -H "Verification-Token: $DBLAB_TOKEN")
+
+          if echo "$BRANCH_DELETE_RESPONSE" | grep -q "BAD_REQUEST"; then
+            echo "⚠️ Branch still has dependencies, retrying in 5 seconds..."
+            sleep 5
+            curl -s -X DELETE "$DBLAB_API/branch/$BRANCH_NAME" \
+              -H "Verification-Token: $DBLAB_TOKEN"
+          fi
+          echo "✅ Branch deletion completed"
+
+          echo "🎉 Cleanup completed for PR $PR_NUMBER"
