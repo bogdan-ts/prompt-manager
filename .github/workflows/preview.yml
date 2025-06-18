@@ -98,8 +98,6 @@ jobs:
                   "force": true
                 }'
 
-          echo "✅ Preview environment deployed at: $NEXTAUTH_URL"
-
   cleanup_preview:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
